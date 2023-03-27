@@ -1,4 +1,5 @@
 from eval import *
+from sklearn.model_selection import train_test_split
 
 
 EPOCHS = 20
@@ -7,8 +8,8 @@ ACCUMULATION_STEPS = 5
 
 
 if __name__ == '__main__':
-    train_df = pd.read_csv('public_train.csv')
-    val_df = pd.read_csv('val.csv')
+    train_df = pd.read_csv('dataset/train.csv')
+    val_df = pd.read_csv('dataset/test.csv')
 
     if torch.cuda.is_available():
         device = torch.device('cuda')
@@ -17,7 +18,7 @@ if __name__ == '__main__':
         device = torch.device('cpu')
 
     # load config
-    config_path = 'config/electra_1.json'
+    config_path = 'configs\phobert.json'
     single_model_config = json.load(open(config_path, 'r'))
 
     # init external tools
@@ -27,7 +28,7 @@ if __name__ == '__main__':
     # process training set
     error_label_idx = []
     tr_texts = []
-    for i, post in enumerate(train_df.post_message):
+    for i, post in enumerate(train_df.text):
         if not isnan(post):
             tr_texts.append(
                 normalize_post(post, tweet_tokenizer, vncorenlp, use_segment=single_model_config['use_wordsegment'],
@@ -43,7 +44,7 @@ if __name__ == '__main__':
     # process validation set
     error_label_idx = []
     vl_texts = []
-    for i, post in enumerate(val_df.post_message):
+    for i, post in enumerate(val_df.text):
         if not isnan(post):
             vl_texts.append(normalize_post(post, tweet_tokenizer, vncorenlp, use_segment=single_model_config['use_wordsegment'],
                                           remove_punc_stopword=single_model_config['remove_punc_stopword']))
@@ -159,7 +160,7 @@ if __name__ == '__main__':
 
             roc_score = eval(val_loader, model, epoch, seed)
             if roc_score >= best_score:
-                save_checkpoint(model, tokenizer, 'trained_models/phobert_random', epoch=seed)
+                save_checkpoint(model, tokenizer, 'trained_models/phobert', epoch=seed)
                 best_score = roc_score
                 print("Updated best score model!!! -------<{}>" % best_score)
             print('==========================================')
