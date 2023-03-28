@@ -1,13 +1,18 @@
 from eval import *
 from sklearn.model_selection import train_test_split
 
+import wandb
+
+from loguru import logger
+
+wandb.init(project='fake_news', id='phobert')
 
 EPOCHS = 20
 BATCH_SIZE = 8
 ACCUMULATION_STEPS = 5
 
 
-if __name__ == '__main__':
+def main():
     train_df = pd.read_csv('dataset/train.csv')
     val_df = pd.read_csv('dataset/test.csv')
 
@@ -18,11 +23,11 @@ if __name__ == '__main__':
         device = torch.device('cpu')
 
     # load config
-    config_path = 'configs\phobert.json'
+    config_path = 'configs/phobert.json'
     single_model_config = json.load(open(config_path, 'r'))
 
     # init external tools
-    vncorenlp = VnCoreNLP('VnCoreNLP-1.1.1.jar', annotators='wseg')
+    vncorenlp = VnCoreNLP('vncorenlp/VnCoreNLP-1.1.1.jar', annotators='wseg')
     tweet_tokenizer = TweetTokenizer()
 
     # process training set
@@ -36,7 +41,7 @@ if __name__ == '__main__':
         else:
             error_label_idx.append(i)
     tr_labels = train_df.iloc[~train_df.index.isin(error_label_idx)].label.to_list()
-    train_ids, train_masks, train_labels = convert_samples_to_ids(tr_texts, tr_labels)
+    train_ids, train_masks, train_labels = convert_samples_to_ids(texts=tr_texts, labels=tr_labels)
     train_dataset = torch.utils.data.TensorDataset(train_ids, train_masks, train_labels)
     train_sampler = torch.utils.data.RandomSampler(train_dataset)
     train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=BATCH_SIZE, sampler=train_sampler)
@@ -51,7 +56,7 @@ if __name__ == '__main__':
         else:
             error_label_idx.append(i)
     vl_labels = val_df.iloc[~val_df.index.isin(error_label_idx)].label.to_list()
-    val_ids, val_masks, val_labels = convert_samples_to_ids(vl_texts, vl_labels)
+    val_ids, val_masks, val_labels = convert_samples_to_ids(texts=vl_texts, labels=vl_labels)
     val_dataset = torch.utils.data.TensorDataset(val_ids, val_masks, val_labels)
     val_sampler = torch.utils.data.SequentialSampler(val_dataset)
     val_loader = torch.utils.data.DataLoader(val_dataset, batch_size=BATCH_SIZE, sampler=val_sampler)
@@ -149,6 +154,18 @@ if __name__ == '__main__':
                 optimizer.step()
 
                 lossf = loss.item()
+                
+                for i, (input_ids, attention_mask, y_batch) in enumerate(val_loader):
+                    with torch.no_grad():
+                        y_pred = model(input_ids.to(device), attention_mask=attention_mask.to(device))
+                        val_loss = torch.nn.functional.binary_cross_entropy_with_logits(y_pred.view(-1).to(device),
+                                                                            y_batch.float().to(device))
+                        val_loss = val_loss.mean()
+                        
+                wandb.log({
+                    'train_loss': lossf,
+                    'val_loss': val_loss.item()
+                })
                 avg_loss += loss.item() / len(train_loader)
 
             if not frozen:
@@ -158,9 +175,16 @@ if __name__ == '__main__':
             optimizer.zero_grad()
             # save_checkpoint(model, tokenizer, 'trained_models/bert_multilingual', epoch=epoch)
 
-            roc_score = eval(val_loader, model, epoch, seed)
-            if roc_score >= best_score:
+            # roc_score = eval(val_loader, model, epoch, seed)
+            if val_loss < best_score:
                 save_checkpoint(model, tokenizer, 'trained_models/phobert', epoch=seed)
-                best_score = roc_score
-                print("Updated best score model!!! -------<{}>" % best_score)
+                best_score = val_loss
+                print("Updated best loss model!!! -------<{}>" % best_score)
             print('==========================================')
+            
+if __name__ == "__main__":
+    try:
+        main()
+    except:
+        logger.exception("Something wrong")
+        exit(-1)
