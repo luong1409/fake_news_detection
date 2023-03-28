@@ -2,6 +2,8 @@ import emoji
 import re
 import torch
 
+from transformers import PhobertTokenizer
+
 def normalize_token(token):
     if len(token) == 1:
         return emoji.demojize(token)
@@ -37,18 +39,22 @@ def normalize_post(post, tweet_tokenizer, vncorenlp, use_segment=False, remove_p
     
     return norm_post
 
-def convert_samples_to_ids(texts, tokenizer, max_seq_length=256, labels=None):
+def convert_samples_to_ids(texts, max_seq_length=256, labels=None):
     input_ids, attention_masks = [], []
     
+    tokenizer = PhobertTokenizer.from_pretrained('vinai/phobert-base')
+    
     for text in texts:
-        inputs = tokenizer.enocde_plus(text, padding='max_length', max_seq_length=max_seq_length, truncation=True)
+        inputs = tokenizer(text, padding='max_length', max_length=max_seq_length, truncation=True)
         input_ids.append(inputs['input_ids'])
         attention_masks.append(inputs['attention_mask'])
         
     if labels is not None:
-        return torch.tensor(input_ids, dtype=torch.long), \
-                torch.tensor(attention_masks, dtype=torch.long), \
-                torch.tensor(labels, dtype=torch.long)
+        return (
+            torch.tensor(input_ids, dtype=torch.long), 
+            torch.tensor(attention_masks, dtype=torch.long), 
+            torch.tensor(labels, dtype=torch.long)
+        )
     
 def get_max_seq(texts, tokenizer):
     max_seq_length = []
